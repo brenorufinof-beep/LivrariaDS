@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { BookOpen, LayoutDashboard, Library, LogOut, Menu, X, UserCircle2 } from "lucide-react";
+import { BookOpen, LayoutDashboard, Library, LogOut, Menu, X, UserCircle2, Clock } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { Button } from "./ui/Button";
 import { ThemeToggle } from "./ThemeToggle";
@@ -11,6 +11,10 @@ const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/acervo", label: "Acervo", icon: Library },
   { to: "/emprestimos", label: "Empréstimos", icon: BookOpen },
+];
+
+const adminNavItems = [
+  { to: "/solicitacoes", label: "Solicitações", icon: Clock },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -62,6 +66,21 @@ export function Layout({ children }: { children: ReactNode }) {
                 {item.label}
               </NavLink>
             ))}
+            {user?.role === "bibliotecario" && adminNavItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  cn(
+                    "inline-flex h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-medium transition-colors min-w-[44px]",
+                    isActive ? "bg-yellow-50 text-yellow-700" : "text-slate-600 hover:bg-slate-100",
+                  )
+                }
+              >
+                <item.icon className="h-4 w-4" />
+                {item.label}
+              </NavLink>
+            ))}
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
@@ -89,6 +108,22 @@ export function Layout({ children }: { children: ReactNode }) {
                   cn(
                     "flex h-12 items-center gap-3 rounded-xl px-3 text-sm font-medium",
                     isActive ? "bg-indigo-50 text-indigo-700" : "text-slate-700 hover:bg-slate-100",
+                  )
+                }
+              >
+                <item.icon className="h-5 w-5" />
+                {item.label}
+              </NavLink>
+            ))}
+            {user?.role === "bibliotecario" && adminNavItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={() => setMobileOpen(false)}
+                className={({ isActive }) =>
+                  cn(
+                    "flex h-12 items-center gap-3 rounded-xl px-3 text-sm font-medium",
+                    isActive ? "bg-yellow-50 text-yellow-700" : "text-slate-700 hover:bg-slate-100",
                   )
                 }
               >

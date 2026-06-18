@@ -11,7 +11,10 @@ dist/
 .env.*
 
 # Database schema
-sql-setup.sql
+*.sql
+setup-complete.sql
+storage-policies.sql
+execute_sql.py
 
 # Logs
 npm-debug.log*

@@ -61,6 +61,22 @@ export interface Loan {
   updated_at: string;
 }
 
+export type LoanRequestStatus = "Pendente" | "Aprovado" | "Rejeitado";
+
+export interface LoanRequest {
+  id: string;
+  user_id: string;
+  book_id: string;
+  data_emprestimo_solicitada: string; // ISO date
+  data_devolucao_prevista: string; // ISO date
+  status: LoanRequestStatus;
+  observacoes?: string;
+  created_at: string;
+  updated_at: string;
+  respondido_em?: string | null;
+  respondido_por?: string | null;
+}
+
 export interface AppUser {
   id: string;
   email: string;

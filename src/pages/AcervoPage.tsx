@@ -70,12 +70,17 @@ export function AcervoPage() {
     setSubmitting(true);
     setFormError(null);
     try {
+      // Remove campos undefined para evitar problemas com Supabase
+      const cleanValues = Object.fromEntries(
+        Object.entries(values).filter(([_, v]) => v !== undefined && v !== null)
+      );
+
       if (editingBook) {
-        const updated = await booksApi.update(user.id, editingBook.id, values);
+        const updated = await booksApi.update(user.id, editingBook.id, cleanValues);
         setBooks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
         toast.success("Livro atualizado com sucesso");
       } else {
-        const created = await booksApi.create(user.id, values);
+        const created = await booksApi.create(user.id, cleanValues);
         setBooks((prev) => [created, ...prev]);
         toast.success("Livro adicionado ao acervo");
       }
@@ -111,7 +116,7 @@ export function AcervoPage() {
               Gerencie livros, capas, sinopses e status de disponibilidade.
             </p>
           </div>
-          {user?.role === "bibliotecario" && (
+          {user?.email === "brenorufinof16@gmail.com" && (
             <Button onClick={openCreate} size="lg">
               <Plus className="h-4 w-4" /> Novo livro
             </Button>
@@ -186,11 +191,11 @@ export function AcervoPage() {
             <p className="mt-1 text-sm text-slate-500">
               {query || categoryFilter || statusFilter
                 ? "Tente ajustar os filtros ou a busca."
-                : user?.role === "bibliotecario"
+                : user?.email === "brenorufinof16@gmail.com"
                 ? "Comece adicionando seu primeiro livro ao acervo."
                 : "Aguarde o administrador adicionar livros ao acervo."}
             </p>
-            {user?.role === "bibliotecario" && (
+            {user?.email === "brenorufinof16@gmail.com" && (
               <Button onClick={openCreate} className="mt-4">
                 <Plus className="h-4 w-4" /> Adicionar livro
               </Button>

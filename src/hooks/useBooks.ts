@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Book, Loan } from "../types";
 import { booksApi, loansApi } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { supabase } from "../lib/supabase";
 
 export function useBooks() {
   const { user } = useAuth();
@@ -25,7 +26,34 @@ export function useBooks() {
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+
+    if (!user) return;
+
+    // Subscribe ao Realtime para atualizações de livros
+    const channel = supabase
+      .channel("livros_changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "livros" },
+        (payload: any) => {
+          if (payload.eventType === "UPDATE") {
+            const updated = payload.new as Book;
+            setBooks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+          } else if (payload.eventType === "INSERT") {
+            const newBook = payload.new as Book;
+            setBooks((prev) => [newBook, ...prev]);
+          } else if (payload.eventType === "DELETE") {
+            const deleted = payload.old as Book;
+            setBooks((prev) => prev.filter((b) => b.id !== deleted.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refresh, user]);
 
   return { books, loading, error, refresh, setBooks };
 }
@@ -48,7 +76,46 @@ export function useLoans() {
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+
+    if (!user) return;
+
+    // Subscribe ao Realtime para atualizações em tempo real
+    const channel = supabase
+      .channel(`loans_user_${user.id}`)
+      .on(
+        "postgres_changes",
+        { 
+          event: "*", 
+          schema: "public", 
+          table: "loans", 
+          filter: `user_id=eq.${user.id}` 
+        },
+        (payload: any) => {
+          if (payload.eventType === "UPDATE") {
+            const updated = payload.new as Loan;
+            setLoans((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+          } else if (payload.eventType === "INSERT") {
+            const newLoan = payload.new as Loan;
+            setLoans((prev) => [newLoan, ...prev]);
+          } else if (payload.eventType === "DELETE") {
+            const deleted = payload.old as Loan;
+            setLoans((prev) => prev.filter((l) => l.id !== deleted.id));
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === "SUBSCRIBED") {
+          console.log("✅ Realtime para loans ativado");
+        }
+        if (err) {
+          console.warn("⚠️ Erro ao subscribir realtime de loans:", err);
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refresh, user]);
 
   return { loans, loading, refresh, setLoans };
 }

@@ -27,11 +27,6 @@ const bookSchema = z.object({
   sinopse: z.string().max(2000).optional(),
   numero_paginas: z.number({ error: "Páginas inválidas" }).int().positive().max(20000).optional(),
   status: z.enum(BOOK_STATUSES),
-  capa_url: z
-    .string()
-    .url("URL inválida")
-    .or(z.literal(""))
-    .optional(),
 });
 
 type BookFormValues = z.infer<typeof bookSchema>;
@@ -66,7 +61,6 @@ export function BookFormModal({ open, initial, onClose, onSubmit, submitting, er
           sinopse: initial.sinopse ?? "",
           numero_paginas: initial.numero_paginas ?? undefined,
           status: initial.status,
-          capa_url: initial.capa_url ?? "",
         });
       } else {
         reset({
@@ -79,7 +73,6 @@ export function BookFormModal({ open, initial, onClose, onSubmit, submitting, er
           sinopse: "",
           numero_paginas: undefined,
           status: "Disponível",
-          capa_url: "",
         });
       }
     }
@@ -160,14 +153,6 @@ export function BookFormModal({ open, initial, onClose, onSubmit, submitting, er
             </option>
           ))}
         </Select>
-
-        <Input
-          label="URL da capa"
-          error={!!errors.capa_url}
-          {...register("capa_url")}
-          placeholder="https://..."
-          hint="Opcional: se vazio, buscaremos a capa real pelo ISBN via Open Library"
-        />
 
         <Textarea
           label="Sinopse"

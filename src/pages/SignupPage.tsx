@@ -15,9 +15,9 @@ const schema = z
   .object({
     name: z.string().min(2, "Informe seu nome"),
     email: z.string().email("E-mail inválido"),
-    password: z.string().min(4, "Mínimo 4 caracteres"),
+    password: z.string().min(6, "Mínimo 6 caracteres"),
   })
-  .refine((d) => d.password.length >= 4, { message: "Mínimo 4 caracteres", path: ["password"] });
+  .refine((d) => d.password.length >= 6, { message: "Mínimo 6 caracteres", path: ["password"] });
 
 type Values = z.infer<typeof schema>;
 
@@ -64,7 +64,7 @@ export function SignupPage() {
         <Input
           label="Senha"
           type="password"
-          placeholder="Mínimo 4 caracteres"
+          placeholder="Mínimo 6 caracteres"
           error={!!errors.password}
           {...register("password")}
           autoComplete="new-password"

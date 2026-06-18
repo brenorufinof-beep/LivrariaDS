@@ -8,7 +8,8 @@ import { Modal } from "../components/ui/Modal";
 import { ConfirmDialog } from "../components/ui/Modal";
 import { LoanFormModal } from "../components/LoanFormModal";
 import { useBooks, useLoans } from "../hooks/useBooks";
-import { loansApi } from "../lib/api";
+import { loansApi, loanRequestsApi, booksApi } from "../lib/api";
+import { supabase } from "../lib/supabase";
 import type { Book, Loan } from "../types";
 import { useAuth } from "../context/AuthContext";
 import { daysUntilDue, formatDate } from "../utils/format";
@@ -16,10 +17,15 @@ import { toast } from "sonner";
 
 type Tab = "ativos" | "devolvidos" | "atrasados";
 
+interface LoanWithUser extends Loan {
+  user_email?: string;
+}
+
 export function EmprestimosPage() {
   const { user } = useAuth();
   const { books, setBooks } = useBooks();
   const { loans, setLoans } = useLoans();
+  const [allLoans, setAllLoans] = useState<LoanWithUser[]>([]); // Para admin ver todos
   const [tab, setTab] = useState<Tab>("ativos");
   const [loanOpen, setLoanOpen] = useState(false);
   const [preselectedBookId, setPreselectedBookId] = useState<string | null>(null);
@@ -27,6 +33,86 @@ export function EmprestimosPage() {
   const [renewingLoan, setRenewingLoan] = useState<Loan | null>(null);
   const [deletingLoan, setDeletingLoan] = useState<Loan | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Se for admin, carrega TODOS os empréstimos
+  useEffect(() => {
+    if (user?.role === "bibliotecario") {
+      const loadAllLoans = async () => {
+        try {
+          const data = await loansApi.listAll();
+          
+          // Enriquece com email do usuário
+          const enriched = await Promise.all(
+            data.map(async (loan: Loan) => {
+              const { data: userData } = await supabase
+                .from("users")
+                .select("email")
+                .eq("id", loan.user_id)
+                .single();
+
+              return {
+                ...loan,
+                user_email: userData?.email || "Usuário desconhecido",
+              };
+            })
+          );
+
+          setAllLoans(enriched);
+        } catch (error) {
+          console.error("Erro ao carregar empréstimos:", error);
+        }
+      };
+
+      loadAllLoans();
+
+      // Subscribe ao Realtime para atualizações em tempo real
+      const channel = supabase
+        .channel("loans_changes")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "loans" },
+          async (payload: any) => {
+            if (payload.eventType === "UPDATE") {
+              const updated = payload.new as Loan;
+              const { data: userData } = await supabase
+                .from("users")
+                .select("email")
+                .eq("id", updated.user_id)
+                .single();
+
+              const enriched = {
+                ...updated,
+                user_email: userData?.email || "Usuário desconhecido",
+              };
+
+              setAllLoans((prev) => prev.map((l) => (l.id === updated.id ? enriched : l)));
+            } else if (payload.eventType === "INSERT") {
+              const newLoan = payload.new as Loan;
+              const { data: userData } = await supabase
+                .from("users")
+                .select("email")
+                .eq("id", newLoan.user_id)
+                .single();
+
+              const enriched = {
+                ...newLoan,
+                user_email: userData?.email || "Usuário desconhecido",
+              };
+
+              setAllLoans((prev) => [enriched, ...prev]);
+            } else if (payload.eventType === "DELETE") {
+              const deleted = payload.old as Loan;
+              setAllLoans((prev) => prev.filter((l) => l.id !== deleted.id));
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [user?.role]);
 
   // Detecta pré-seleção via hash (#loan=xxx)
   useEffect(() => {
@@ -44,23 +130,26 @@ export function EmprestimosPage() {
     [books],
   );
 
+  // Se for admin, usa empréstimos de todos; se não, usa apenas os dele
+  const displayLoans = user?.role === "bibliotecario" ? allLoans : loans;
+
   const counts = useMemo(
     () => ({
-      ativos: loans.filter((l) => l.status === "Ativo" || l.status === "Renovado").length,
-      devolvidos: loans.filter((l) => l.status === "Devolvido").length,
-      atrasados: loans.filter((l) => l.status === "Atrasado").length,
+      ativos: displayLoans.filter((l) => l.status === "Ativo" || l.status === "Renovado").length,
+      devolvidos: displayLoans.filter((l) => l.status === "Devolvido").length,
+      atrasados: displayLoans.filter((l) => l.status === "Atrasado").length,
     }),
-    [loans],
+    [displayLoans],
   );
 
   const filteredLoans = useMemo(() => {
-    return loans.filter((l) => {
+    return displayLoans.filter((l) => {
       if (tab === "ativos") return l.status === "Ativo" || l.status === "Renovado";
       if (tab === "devolvidos") return l.status === "Devolvido";
       if (tab === "atrasados") return l.status === "Atrasado";
       return true;
     });
-  }, [loans, tab]);
+  }, [displayLoans, tab]);
 
   const bookById = (id: string) => books.find((b) => b.id === id);
 
@@ -68,18 +157,36 @@ export function EmprestimosPage() {
     if (!user) return;
     setActionLoading(true);
     try {
-      const { loan } = await loansApi.create(user.id, {
-        book_id: values.book_id,
-        data_emprestimo: values.data_emprestimo,
-        data_devolucao_prevista: values.data_devolucao_prevista,
-        bookStatus: "Emprestado",
-      });
-      // Atualiza estado local
-      setLoans((prev) => [loan, ...prev]);
-      setBooks((prev) =>
-        prev.map((b) => (b.id === loan.book_id ? { ...b, status: "Emprestado" } : b)),
-      );
-      toast.success("Empréstimo registrado");
+      // Se for admin, cria empréstimo direto
+      if (user.role === "bibliotecario") {
+        const { loan } = await loansApi.create(user.id, {
+          book_id: values.book_id,
+          data_emprestimo: values.data_emprestimo,
+          data_devolucao_prevista: values.data_devolucao_prevista,
+          bookStatus: "Emprestado",
+        });
+        setLoans((prev) => [loan, ...prev]);
+        setBooks((prev) =>
+          prev.map((b) => (b.id === loan.book_id ? { ...b, status: "Emprestado" } : b)),
+        );
+        toast.success("Empréstimo registrado");
+      } else {
+        // Se for usuário comum, cria solicitação
+        console.log("👤 [DEBUG] Usuário comum fazendo solicitação");
+        console.log("👤 [DEBUG] user.id:", user.id, "tipo:", typeof user.id);
+        console.log("👤 [DEBUG] user.email:", user.email);
+        console.log("👤 [DEBUG] values.book_id:", values.book_id, "tipo:", typeof values.book_id);
+        console.log("👤 [DEBUG] values.data_emprestimo:", values.data_emprestimo);
+        console.log("👤 [DEBUG] values.data_devolucao_prevista:", values.data_devolucao_prevista);
+        
+        const result = await loanRequestsApi.create(user.id, {
+          book_id: values.book_id,
+          data_emprestimo_solicitada: values.data_emprestimo,
+          data_devolucao_prevista: values.data_devolucao_prevista,
+        });
+        console.log("👤 [DEBUG] Resultado do create:", result);
+        toast.success("Solicitação de empréstimo enviada! Aguarde aprovação do administrador.");
+      }
       setLoanOpen(false);
       setPreselectedBookId(null);
     } catch (e) {
@@ -93,14 +200,32 @@ export function EmprestimosPage() {
     if (!user || !returningLoan) return;
     setActionLoading(true);
     try {
+      console.log("📤 Iniciando devolução...");
       const updated = await loansApi.returnLoan(user.id, returningLoan.id);
+      console.log("✅ Devolução processada:", updated);
+      
+      // Atualiza o estado local
       setLoans((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+      setAllLoans((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+      
+      // Atualiza o status do livro
       setBooks((prev) =>
         prev.map((b) => (b.id === updated.book_id ? { ...b, status: "Disponível" } : b)),
       );
-      toast.success("Devolução confirmada");
+      
+      // Aguarda um pouco para o banco de dados sincronizar
+      await new Promise(r => setTimeout(r, 500));
+      
+      // Recarrega os livros para garantir sincronização
+      console.log("🔄 Recarregando livros...");
+      const refreshedBooks = await booksApi.list(user.id);
+      setBooks(refreshedBooks);
+      console.log("✅ Livros recarregados");
+      
+      toast.success("Devolução confirmada - Livro disponível novamente");
       setReturningLoan(null);
     } catch (e) {
+      console.error("❌ Erro na devolução:", e);
       toast.error(e instanceof Error ? e.message : "Erro ao devolver");
     } finally {
       setActionLoading(false);
@@ -113,6 +238,7 @@ export function EmprestimosPage() {
     try {
       const updated = await loansApi.renew(user.id, renewingLoan.id);
       setLoans((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+      setAllLoans((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
       toast.success("Empréstimo renovado (+14 dias)");
       setRenewingLoan(null);
     } catch (e) {
@@ -127,6 +253,7 @@ export function EmprestimosPage() {
     try {
       await loansApi.remove(user.id, deletingLoan.id);
       setLoans((prev) => prev.filter((l) => l.id !== deletingLoan.id));
+      setAllLoans((prev) => prev.filter((l) => l.id !== deletingLoan.id));
       toast.success("Empréstimo removido");
       setDeletingLoan(null);
     } catch (e) {
@@ -174,6 +301,9 @@ export function EmprestimosPage() {
                 <thead className="bg-slate-50 text-slate-600">
                   <tr className="text-left">
                     <th className="px-4 py-3 font-medium">Livro</th>
+                    {user?.role === "bibliotecario" && (
+                      <th className="px-4 py-3 font-medium">Usuário</th>
+                    )}
                     <th className="px-4 py-3 font-medium">Empréstimo</th>
                     <th className="px-4 py-3 font-medium">Devolução</th>
                     <th className="px-4 py-3 font-medium">Status</th>
@@ -203,6 +333,11 @@ export function EmprestimosPage() {
                             </div>
                           </div>
                         </td>
+                        {user?.role === "bibliotecario" && (
+                          <td className="px-4 py-3 text-slate-700 text-xs">
+                            {(loan as LoanWithUser).user_email || "—"}
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-slate-700">{formatDate(loan.data_emprestimo)}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
@@ -288,6 +423,11 @@ export function EmprestimosPage() {
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-slate-900 line-clamp-2">{book?.titulo ?? "—"}</p>
                       <p className="text-xs text-slate-500 mt-0.5">{book?.autor}</p>
+                      {user?.role === "bibliotecario" && (
+                        <p className="text-xs text-slate-600 font-medium mt-1">
+                          👤 {(loan as LoanWithUser).user_email || "—"}
+                        </p>
+                      )}
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         <Badge tone={statusTone(loan.status)}>{loan.status}</Badge>
                         {!loan.data_devolucao_efetiva && (

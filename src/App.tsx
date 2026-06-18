@@ -9,6 +9,7 @@ import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { AcervoPage } from "./pages/AcervoPage";
 import { EmprestimosPage } from "./pages/EmprestimosPage";
+import { SolicitacoesPage } from "./pages/SolicitacoesPage";
 
 export default function App() {
   return (
@@ -42,6 +43,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <EmprestimosPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/solicitacoes"
+            element={
+              <ProtectedRoute>
+                <SolicitacoesPage />
               </ProtectedRoute>
             }
           />
